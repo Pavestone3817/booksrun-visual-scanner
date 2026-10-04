@@ -7,12 +7,13 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# --- CREDENTIALS & CONSTANTS ---
+# --- APP VERSION & CONFIGURATION ---
+APP_VERSION = "v3.0"
 BOOKSRUN_API_KEY = "j69yick1gexf8blbdtix"
 BOOKSRUN_AFK = "31443"
 
 st.set_page_config(
-    page_title="Book Scout",
+    page_title=f"Book Scout {APP_VERSION}",
     page_icon="📚",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -52,7 +53,7 @@ def extract_books_with_vision(image: Image.Image, api_key: str):
     )
     
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=[prompt, image],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -88,24 +89,33 @@ def check_booksrun_quote(isbn: str) -> dict:
         pass
     return {}
 
-# --- INTERFACE ---
-st.title("📚 Scout & Flip")
-st.caption("Visual Garage Sale Scanner powered by BooksRun")
+# --- HEADER & VERSION TAG ---
+col_head, col_ver = st.columns([4, 1])
+with col_head:
+    st.title("📚 Scout & Flip")
+    st.caption("Visual Garage Sale Scanner powered by BooksRun")
+with col_ver:
+    st.markdown(f"<span style='float:right; background:#2e303d; color:#00e676; padding:4px 8px; border-radius:6px; font-weight:bold;'>{APP_VERSION}</span>", unsafe_allow_html=True)
 
 if not gemini_key:
     st.info("⚠️ Please enter your Gemini API key in the left sidebar or configure Streamlit Secrets.")
     st.stop()
 
-tab_camera, tab_manual = st.tabs(["📸 Snap Photo", "⌨️ Manual ISBNs"])
+tab_camera, tab_manual = st.tabs(["📸 Snap / Upload", "⌨️ Manual ISBNs"])
 
 with tab_camera:
-    camera_photo = st.camera_input("Capture book covers or shelf:")
-    file_photo = st.file_uploader("Or upload from gallery:", type=["jpg", "jpeg", "png"])
-    active_image = camera_photo or file_photo
+    st.markdown("**Take Photo (Uses Rear Camera & Lens Zoom):**")
+    # File uploader on mobile activates native rear camera app with full 1x/2x/3x optical zoom
+    file_photo = st.file_uploader("Tap to open phone camera or select photo:", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+    
+    with st.expander("Or use embedded live browser viewfinder"):
+        camera_photo = st.camera_input("Browser viewfinder", label_visibility="collapsed")
+
+    active_image = file_photo or camera_photo
 
     if active_image and st.button("🚀 Analyze & Check Offers", use_container_width=True, type="primary"):
         img = Image.open(active_image)
-        with st.spinner("AI scanning covers and extracting titles..."):
+        with st.spinner("AI scanning covers and extracting titles with Gemini 3.8 Flash..."):
             try:
                 detected_books = extract_books_with_vision(img, gemini_key)
             except Exception as e:
