@@ -8,7 +8,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 # --- APP VERSION & CONFIGURATION ---
-APP_VERSION = "v3.0"
+APP_VERSION = "v3.1"
 BOOKSRUN_API_KEY = "j69yick1gexf8blbdtix"
 BOOKSRUN_AFK = "31443"
 
@@ -33,6 +33,18 @@ min_profit_threshold = st.sidebar.slider(
     step=0.50
 )
 
+# --- IMAGE COMPRESSION HELPER ---
+def optimize_image_for_api(image: Image.Image, max_dim: int = 1600) -> Image.Image:
+    """Downsamples massive smartphone photos to speed up transmission and prevent timeouts."""
+    img = image.convert("RGB")
+    width, height = img.size
+    
+    if max(width, height) > max_dim:
+        scale = max_dim / float(max(width, height))
+        new_size = (int(width * scale), int(height * scale))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+    return img
+
 # --- STRUCTURED SCHEMA ---
 class DetectedBook(BaseModel):
     title: str = Field(description="Exact book title visible on the cover or spine.")
@@ -52,9 +64,12 @@ def extract_books_with_vision(image: Image.Image, api_key: str):
         "Ignore board games, notebooks, toys, or illegible items."
     )
     
+    # Process with optimized image
+    optimized_img = optimize_image_for_api(image)
+    
     response = client.models.generate_content(
         model="gemini-3.8-flash",
-        contents=[prompt, image],
+        contents=[prompt, optimized_img],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=BookListExtraction,
@@ -105,7 +120,6 @@ tab_camera, tab_manual = st.tabs(["📸 Snap / Upload", "⌨️ Manual ISBNs"])
 
 with tab_camera:
     st.markdown("**Take Photo (Uses Rear Camera & Lens Zoom):**")
-    # File uploader on mobile activates native rear camera app with full 1x/2x/3x optical zoom
     file_photo = st.file_uploader("Tap to open phone camera or select photo:", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
     
     with st.expander("Or use embedded live browser viewfinder"):
@@ -123,7 +137,7 @@ with tab_camera:
                 detected_books = []
         
         if not detected_books:
-            st.warning("No readable books found. Try a closer angle.")
+            st.warning("No readable books found. Try taking a closer photo.")
         else:
             st.subheader(f"Found {len(detected_books)} Potential Books")
             total_cart = 0.0
