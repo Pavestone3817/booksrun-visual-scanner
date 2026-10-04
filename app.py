@@ -3,7 +3,8 @@ import json
 import requests
 import streamlit as st
 from PIL import Image
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 # --- CREDENTIALS & CONSTANTS ---
@@ -17,13 +18,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Fetch Gemini API Key from Streamlit Secrets or manual fallback
+# Fetch Gemini API Key from Streamlit Secrets or sidebar
 if "GEMINI_API_KEY" in st.secrets:
     gemini_key = st.secrets["GEMINI_API_KEY"]
 else:
     gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-min_profit_threshold = st.sidebar.slider("Min Target Payout ($)", min_value=0.50, max_value=20.00, value=3.00, step=0.50)
+min_profit_threshold = st.sidebar.slider(
+    "Min Target Payout ($)", 
+    min_value=0.50, 
+    max_value=20.00, 
+    value=3.00, 
+    step=0.50
+)
 
 # --- STRUCTURED SCHEMA ---
 class DetectedBook(BaseModel):
@@ -36,21 +43,22 @@ class BookListExtraction(BaseModel):
 
 # --- PIPELINE ENGINES ---
 def extract_books_with_vision(image: Image.Image, api_key: str):
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = genai.Client(api_key=api_key)
     prompt = (
         "Identify every individual, clearly readable book in this photo. "
         "Extract the main title, author name (if discernible), and whether it appears "
         "to be a Hardcover or Paperback based on physical binding and edges. "
         "Ignore board games, notebooks, toys, or illegible items."
     )
-    response = model.generate_content(
-        [prompt, image],
-        generation_config={
-            "response_mime_type": "application/json",
-            "response_schema": BookListExtraction,
-            "temperature": 0.1
-        }
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[prompt, image],
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=BookListExtraction,
+            temperature=0.1
+        )
     )
     return json.loads(response.text).get("books", [])
 
@@ -98,7 +106,11 @@ with tab_camera:
     if active_image and st.button("🚀 Analyze & Check Offers", use_container_width=True, type="primary"):
         img = Image.open(active_image)
         with st.spinner("AI scanning covers and extracting titles..."):
-            detected_books = extract_books_with_vision(img, gemini_key)
+            try:
+                detected_books = extract_books_with_vision(img, gemini_key)
+            except Exception as e:
+                st.error(f"Vision analysis error: {e}")
+                detected_books = []
         
         if not detected_books:
             st.warning("No readable books found. Try a closer angle.")
